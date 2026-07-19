@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Register - Intellex</title>
+    <link rel="icon"
+        href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect x='25' y='45' width='12' height='40' rx='6' fill='%23a855f7' opacity='0.6'/><rect x='44' y='25' width='12' height='60' rx='6' fill='%233b82f6'/><rect x='63' y='15' width='12' height='70' rx='6' fill='%233b82f6' opacity='0.8'/><circle cx='50' cy='20' r='6' fill='%23a855f7' /></svg>">
+    <script>
+        document.write('<link rel="stylesheet" href="' + (location.protocol === 'file:' ? 'style.css?v=' : '/static/style.css?v=') + new Date().getTime() + '">');
+    </script>
+</head>
+
+<body>
+    <div class="split-screen-container">
+        <!-- Left Side: Hero Brand & Mockups -->
+        <div class="hero-side">
+            <div class="brand-header">
+                <svg viewBox="0 0 100 100" class="brand-logo-svg">
+                    <defs>
+                        <linearGradient id="logoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" stop-color="#a855f7" />
+                            <stop offset="100%" stop-color="#3b82f6" />
+                        </linearGradient>
+                    </defs>
+                    <rect x="25" y="45" width="12" height="40" rx="6" fill="url(#logoGrad)" opacity="0.6"/>
+                    <rect x="44" y="25" width="12" height="60" rx="6" fill="url(#logoGrad)"/>
+                    <rect x="63" y="15" width="12" height="70" rx="6" fill="url(#logoGrad)" opacity="0.8"/>
+                    <circle cx="50" cy="20" r="6" fill="url(#logoGrad)" />
+                </svg>
+                <div class="brand-title">
+                    <span class="brand-main" style="font-size: 1.5em; font-weight: 800; letter-spacing: 0.5px; background: linear-gradient(135deg, #a855f7 0%, #3b82f6 100%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; display: inline-block;">Intellex</span>
+                </div>
+            </div>
+
+            <div class="hero-content">
+                <h1>Turn Data into<br>Decisions.<br><span class="gradient-text">Drive Growth.</span></h1>
+                <p class="hero-desc">Intellex helps you analyze sales performance, uncover insights, and predict future growth with AI-powered analytics.</p>
+                
+                <div class="feature-bullets">
+                    <div class="bullet-item">
+                        <div class="bullet-icon-wrapper blue">📊</div>
+                        <div class="bullet-text">
+                            <strong>Smart Dashboards</strong>
+                            <span>Real-time overview of your business performance.</span>
+                        </div>
+                    </div>
+                    <div class="bullet-item">
+                        <div class="bullet-icon-wrapper purple">📈</div>
+                        <div class="bullet-text">
+                            <strong>AI-Powered Insights</strong>
+                            <span>Predict trends and get actionable recommendations.</span>
+                        </div>
+                    </div>
+                    <div class="bullet-item">
+                        <div class="bullet-icon-wrapper cyan">💼</div>
+                        <div class="bullet-text">
+                            <strong>Advanced Analytics</strong>
+                            <span>Deep dive into revenue, products and customer behavior.</span>
+                        </div>
+                    </div>
+                    <div class="bullet-item">
+                        <div class="bullet-icon-wrapper green">📄</div>
+                        <div class="bullet-text">
+                            <strong>Reports & Exports</strong>
+                            <span>Generate professional reports and share with your team.</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Dashboard Mockup Image -->
+            <div class="mockup-section">
+                <img id="mockupImg" alt="Sales Dashboard Mockup" class="mockup-img">
+                <script>
+                    document.getElementById('mockupImg').src = (location.protocol === 'file:' ? 'dashboard_mockup.png' : '/static/dashboard_mockup.png');
+                </script>
+            </div>
+
+            <div class="quote-card">
+                <span class="quote-symbol">“</span>
+                <p>The best way to predict the future is to <span class="quote-highlight">analyze it today.</span></p>
+            </div>
+        </div>
+
+        <!-- Right Side: Form Container -->
+        <div class="form-side">
+            <div class="login-card" style="text-align: left;">
+                <!-- Form Section -->
+                <div id="formSection">
+                    <div class="logo-orbit-container">
+                        <div class="logo-orbit-ring"></div>
+                        <svg viewBox="0 0 100 100" class="card-logo-svg">
+                            <rect x="25" y="45" width="12" height="40" rx="6" fill="url(#logoGrad)" opacity="0.6"/>
+                            <rect x="44" y="25" width="12" height="60" rx="6" fill="url(#logoGrad)"/>
+                            <rect x="63" y="15" width="12" height="70" rx="6" fill="url(#logoGrad)" opacity="0.8"/>
+                            <circle cx="50" cy="20" r="6" fill="url(#logoGrad)" />
+                        </svg>
+                    </div>
+
+                    <h2 style="text-align: center;">Create Account</h2>
+                    <p class="subtitle" style="text-align: center; margin-bottom: 12px;">Set up your profile to analyze sales performance</p>
+
+                    <!-- Tabs shown only in Details Phase -->
+                    <div class="tabs" id="tabsGroup">
+                        <button type="button" class="tab-btn active" id="createTab" onclick="setMode('create')">New Org</button>
+                        <button type="button" class="tab-btn" id="joinTab" onclick="setMode('join')">Join Org</button>
+                    </div>
+
+                    <div id="alertBox" class="alert"></div>
+
+                    <form id="registerForm">
+                        <!-- Step 1 Group: Account details -->
+                        <div id="detailsSection">
+                            <div class="form-group">
+                                <label for="name">Your Name</label>
+                                <div class="input-wrapper">
+                                    <span class="input-icon">👤</span>
+                                    <input type="text" id="name" required placeholder="Enter your name">
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="email">Email Address</label>
+                                <div class="input-wrapper">
+                                    <span class="input-icon">✉</span>
+                                    <input type="email" id="email" required placeholder="Enter your email">
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="phone">Phone Number</label>
+                                <div class="input-wrapper">
+                                    <span class="input-icon">📞</span>
+                                    <input type="tel" id="phone" required placeholder="Enter phone number">
+                                </div>
+                            </div>
+
+                            <!-- Shown in Create Mode -->
+                            <div class="form-group" id="orgNameGroup">
+                                <label for="org_name">Organization Name</label>
+                                <div class="input-wrapper">
+                                    <span class="input-icon">🏢</span>
+                                    <input type="text" id="org_name" required placeholder="Enter organization name">
+                                </div>
+                            </div>
+
+                            <!-- Shown in Join Mode -->
+                            <div class="form-group" id="joinCodeGroup" style="display: none;">
+                                <label for="join_code">Join Code</label>
+                                <div class="input-wrapper">
+                                    <span class="input-icon">🔑</span>
+                                    <input type="text" id="join_code" placeholder="XXXXXX" maxlength="6" style="text-transform: uppercase; padding-left: 44px;">
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="password">Password</label>
+                                <div class="input-wrapper">
+                                    <span class="input-icon">🔒</span>
+                                    <input type="password" id="password" required placeholder="Enter password">
+                                    <span class="toggle-password" id="togglePassword">👁</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Step 2 Group: OTP verification -->
+                        <div id="otpSection" style="display: none;">
+                            <div class="otp-notice">
+                                🔒 <strong>Verify your Phone Number</strong><br>
+                                We have triggered a 6-digit OTP SMS verification code. Please enter it below to complete registration.
+                            </div>
+
+                            <div class="form-group">
+                                <label for="otp">One-Time Password (OTP)</label>
+                                <input type="text" id="otp" placeholder="Enter code" maxlength="6"
+                                    style="text-align: center; letter-spacing: 4px; font-weight: 700; font-size: 1.2em; padding-left: 16px;">
+                            </div>
+
+                            <button type="button" onclick="cancelOTP()" class="btn-secondary">Go Back & Edit</button>
+                        </div>
+
+                        <button type="submit" id="submitBtn" class="btn-submit" style="margin-top: 20px;">Register Account</button>
+                    </form>
+
+                    <div class="footer-links" id="loginFooter" style="text-align: center; margin-top: 24px;">
+                        Already have an account? <a href="login.html" id="loginLink">Sign in here</a>
+                    </div>
+                </div>
+
+                <!-- Success State Display -->
+                <div id="successSection" class="success-box" style="text-align: center;">
+                    <span class="logo" style="animation: none; font-size: 3em; margin-bottom: 20px;">🎉</span>
+                    <h2>Welcome aboard!</h2>
+                    <p style="margin-top: 15px; color: #94a3b8; line-height: 1.5; font-size: 0.92em;">Your organization workspace is ready. Give this 6-digit Join Code to your team members so they can register and join your workspace:</p>
+
+                    <div class="code-display" id="joinCodeDisplay">XXXXXX</div>
+
+                    <p style="font-size: 0.85em; color: #64748b; margin-bottom: 24px;">We have logged you in automatically.</p>
+                    <a href="index.html" id="continueLink" class="btn-continue">Go to Home Page</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const SERVER_BASE = location.protocol === 'file:' ? 'http://localhost:5000' : window.location.origin;
+
+        // Redirect logic helper
+        function getRedirectUrl(page) {
+            if (location.protocol === 'file:') return page;
+            const routeMap = { 'index.html': '/', 'upload.html': '/upload', 'dashboard.html': '/dashboard', 'login.html': '/login' };
+            return routeMap[page] || '/' + page;
+        }
+
+        document.getElementById('loginLink').setAttribute('href', getRedirectUrl('login.html'));
+        document.getElementById('continueLink').setAttribute('href', getRedirectUrl('index.html'));
+
+        let registrationMode = 'create'; // 'create' or 'join'
+        let otpPhase = false; // true when OTP input is displayed
+
+        function setMode(mode) {
+            if (otpPhase) return; // Prevent tab switches during OTP phase
+            registrationMode = mode;
+            const createTab = document.getElementById('createTab');
+            const joinTab = document.getElementById('joinTab');
+            const orgNameGroup = document.getElementById('orgNameGroup');
+            const joinCodeGroup = document.getElementById('joinCodeGroup');
+            const orgNameInput = document.getElementById('org_name');
+            const joinCodeInput = document.getElementById('join_code');
+
+            if (mode === 'create') {
+                createTab.classList.add('active');
+                joinTab.classList.remove('active');
+                orgNameGroup.style.display = 'block';
+                joinCodeGroup.style.display = 'none';
+                orgNameInput.required = true;
+                joinCodeInput.required = false;
+            } else {
+                createTab.classList.remove('active');
+                joinTab.classList.add('active');
+                orgNameGroup.style.display = 'none';
+                joinCodeGroup.style.display = 'block';
+                orgNameInput.required = false;
+                joinCodeInput.required = true;
+            }
+        }
+
+        function showAlert(message, type) {
+            const alertBox = document.getElementById('alertBox');
+            alertBox.className = 'alert alert-' + type;
+            alertBox.textContent = message;
+            alertBox.style.display = 'block';
+        }
+
+        function hideAlert() {
+            document.getElementById('alertBox').style.display = 'none';
+        }
+
+        // Password visibility toggler
+        const togglePassword = document.getElementById('togglePassword');
+        const passwordInput = document.getElementById('password');
+        if (togglePassword && passwordInput) {
+            togglePassword.addEventListener('click', () => {
+                const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
+                passwordInput.setAttribute('type', type);
+                togglePassword.textContent = type === 'password' ? '👁' : '🙈';
+            });
+        }
+
+        function cancelOTP() {
+            otpPhase = false;
+            document.getElementById('otpSection').style.display = 'none';
+            document.getElementById('detailsSection').style.display = 'block';
+            document.getElementById('tabsGroup').style.display = 'flex';
+            document.getElementById('loginFooter').style.display = 'block';
+            document.getElementById('submitBtn').textContent = 'Register Account';
+
+            // Enable inputs
+            document.querySelectorAll('#detailsSection input').forEach(input => input.disabled = false);
+            document.getElementById('otp').required = false;
+        }
+
+        // Form submission
+        document.getElementById('registerForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            hideAlert();
+
+            const name = document.getElementById('name').value.trim();
+            const email = document.getElementById('email').value.trim();
+            const phone = document.getElementById('phone').value.trim();
+            const password = document.getElementById('password').value;
+            const org_name = document.getElementById('org_name').value.trim();
+            const join_code = document.getElementById('join_code').value.trim().toUpperCase();
+            const btn = document.getElementById('submitBtn');
+
+            if (!otpPhase) {
+                // Phase 1: Request OTP
+                btn.disabled = true;
+                btn.innerHTML = 'Triggering verification SMS...';
+
+                const otpPayload = {
+                    action: registrationMode,
+                    name,
+                    email,
+                    phone
+                };
+                if (registrationMode === 'create') {
+                    otpPayload.org_name = org_name;
+                } else {
+                    otpPayload.join_code = join_code;
+                }
+
+                try {
+                    const response = await fetch(SERVER_BASE + '/api/auth/send-otp', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(otpPayload)
+                    });
+
+                    const result = await response.json();
+
+                    if (response.ok && result.status === 'success') {
+                        // Switch to OTP Phase
+                        otpPhase = true;
+                        document.getElementById('detailsSection').style.display = 'none';
+                        document.getElementById('tabsGroup').style.display = 'none';
+                        document.getElementById('loginFooter').style.display = 'none';
+                        document.getElementById('otpSection').style.display = 'block';
+                        document.getElementById('otp').required = true;
+
+                        btn.disabled = false;
+                        btn.textContent = 'Verify OTP & Complete Registration';
+                        showAlert('OTP code successfully sent to your phone number!', 'success');
+                    } else {
+                        showAlert(result.message || 'Failed to trigger verification code.', 'error');
+                        btn.disabled = false;
+                        btn.textContent = 'Register Account';
+                    }
+                } catch (error) {
+                    showAlert('Network error: ' + error.message, 'error');
+                    btn.disabled = false;
+                    btn.textContent = 'Register Account';
+                }
+            } else {
+                // Phase 2: Verify OTP & Complete Registration
+                const otp = document.getElementById('otp').value.trim();
+                if (!otp) {
+                    showAlert('Please enter the OTP verification code.', 'error');
+                    return;
+                }
+
+                btn.disabled = true;
+                btn.innerHTML = 'Verifying OTP & creating account...';
+
+                const finalPayload = {
+                    action: registrationMode,
+                    name,
+                    email,
+                    phone,
+                    password,
+                    otp
+                };
+
+                if (registrationMode === 'create') {
+                    finalPayload.org_name = org_name;
+                } else {
+                    finalPayload.join_code = join_code;
+                }
+
+                try {
+                    const response = await fetch(SERVER_BASE + '/api/auth/register', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(finalPayload)
+                    });
+
+                    const result = await response.json();
+
+                    if (response.ok && result.status === 'success') {
+                        if (registrationMode === 'create') {
+                            document.getElementById('joinCodeDisplay').textContent = result.join_code;
+                            document.getElementById('formSection').style.display = 'none';
+                            document.getElementById('successSection').style.display = 'block';
+                        } else {
+                            showAlert('Success! Account created and joined organization. Redirecting to home page...', 'success');
+                            setTimeout(() => {
+                                window.location.href = getRedirectUrl('index.html');
+                            }, 1200);
+                        }
+                    } else {
+                        showAlert(result.message || 'Registration failed.', 'error');
+                        btn.disabled = false;
+                        btn.textContent = 'Verify OTP & Complete Registration';
+                    }
+                } catch (error) {
+                    showAlert('Network error: ' + error.message, 'error');
+                    btn.disabled = false;
+                    btn.textContent = 'Verify OTP & Complete Registration';
+                }
+            }
+        });
+    </script>
+</body>
+
+</html>
