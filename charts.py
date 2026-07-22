@@ -1,6 +1,7 @@
 import io
 import math
 import pandas as pd
+import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -10,7 +11,7 @@ from flask import send_file
 from database import get_table_as_df
 
 def _empty_chart_figure(message):
-    fig, ax = plt.subplots(figsize=(10, 5.2), facecolor='#1e293b')
+    fig, ax = plt.subplots(figsize=(10, 5.0), facecolor='#1e293b')
     ax.set_facecolor('#1e293b')
     ax.axis('off')
     ax.text(0.5, 0.54, message, ha='center', va='center', fontsize=14, color='#94a3b8', fontweight='semibold')
@@ -28,12 +29,16 @@ def _chart_response(fig):
     return response
 
 def _currency_formatter(value, _):
-    if abs(value) >= 1000:
+    if abs(value) >= 1000000:
+        return f'${value / 1000000:.1f}M'
+    elif abs(value) >= 1000:
         return f'${value / 1000:.0f}k'
     return f'${value:,.0f}'
 
 def _format_currency_text(value):
-    if abs(value) >= 1000:
+    if abs(value) >= 1000000:
+        return f'${value / 1000000:,.2f}M'
+    elif abs(value) >= 1000:
         return f'${value / 1000:,.1f}k'
     return f'${value:,.0f}'
 
@@ -47,7 +52,7 @@ def _apply_chart_style(ax, title, subtitle=None):
     ax.spines['right'].set_visible(False)
     ax.spines['left'].set_color('#334155')
     ax.spines['bottom'].set_color('#334155')
-    ax.tick_params(colors='#94a3b8')
+    ax.tick_params(colors='#94a3b8', labelsize=10)
 
 def _load_sales_frame(org_id):
     df = get_table_as_df('sales_clean', org_id)
@@ -92,9 +97,49 @@ def _get_period_freq(df, date_col='order_date'):
     else:
         return 'Q', 'Quarter'
 
+def _clean_group_categories(df, cat_col, metric_col, max_categories=5):
+    """
+    Aggregates high-cardinality or continuous decimal columns into a clean 4-5 bar summary.
+    Bins continuous numeric floats into clean range brackets (e.g. 20 - 35, 35 - 50)
+    and collapses high-cardinality discrete categories into Top 4 + 'Other'.
+    """
+    valid_df = df.dropna(subset=[cat_col, metric_col]).copy()
+    if len(valid_df) == 0:
+        return pd.DataFrame(columns=[cat_col, metric_col])
+        
+    s = valid_df[cat_col]
+    numeric_s = pd.to_numeric(s, errors='coerce')
+    is_numeric = numeric_s.notna().mean() > 0.8 and s.nunique() > 8
+    
+    if is_numeric:
+        try:
+            num_series = numeric_s.dropna()
+            num_bins = min(4, num_series.nunique())
+            if num_bins > 1:
+                bin_res, bin_edges = pd.qcut(num_series, q=num_bins, retbins=True, duplicates='drop')
+                labels = [f"{bin_edges[i]:.1f} - {bin_edges[i+1]:.1f}" for i in range(len(bin_edges)-1)]
+                valid_df['clean_cat'] = pd.cut(numeric_s, bins=bin_edges, labels=labels, include_lowest=True).astype(str)
+            else:
+                valid_df['clean_cat'] = s.astype(str)
+        except Exception:
+            valid_df['clean_cat'] = s.astype(str)
+    else:
+        valid_df['clean_cat'] = s.astype(str)
+
+    grouped = valid_df.groupby('clean_cat')[metric_col].sum().sort_values(ascending=False).reset_index()
+    grouped.columns = [cat_col, metric_col]
+    
+    if len(grouped) > max_categories:
+        top_df = grouped.iloc[:max_categories - 1].copy()
+        other_sum = grouped.iloc[max_categories - 1:][metric_col].sum()
+        other_row = pd.DataFrame([{cat_col: 'Other', metric_col: other_sum}])
+        grouped = pd.concat([top_df, other_row], ignore_index=True)
+        
+    return grouped
+
 def build_revenue_trend_chart(org_id):
     df = _load_sales_frame(org_id)
-    if len(df) == 0:
+    if len(df) == 0 or 'revenue' not in df.columns or df['revenue'].dropna().empty:
         return _empty_chart_figure('No revenue data available yet.')
 
     headers = _get_headers_or_default(org_id)
@@ -102,47 +147,59 @@ def build_revenue_trend_chart(org_id):
 
     freq, label = _get_period_freq(df)
 
-    trend = df.copy()
+    trend = df.dropna(subset=['order_date', 'revenue']).copy()
+    if len(trend) == 0:
+        return _empty_chart_figure('No revenue data available yet.')
+        
     trend['period'] = trend['order_date'].dt.to_period(freq).astype(str)
     grouped = trend.groupby('period')['revenue'].sum().reset_index()
+    
+    # Limit to 10 periods max for uncluttered line chart display
+    if len(grouped) > 10:
+        grouped = grouped.tail(10)
+        
     x = list(range(len(grouped)))
     y = grouped['revenue'].tolist()
 
-    fig, ax = plt.subplots(figsize=(10, 5.2), facecolor='#1e293b')
-    _apply_chart_style(ax, f'{rev} Trend by {label}', f'{label}ly {rev.lower()} momentum with latest period highlighted')
-    ax.plot(x, y, color='#667eea', linewidth=3, marker='o', markersize=7, markerfacecolor='#1e293b', markeredgewidth=2)
-    ax.fill_between(x, y, color='#667eea', alpha=0.12)
-    ax.scatter([x[-1]], [y[-1]], s=160, color='#00d9ff', edgecolor='#1e293b', linewidth=2, zorder=4)
+    fig, ax = plt.subplots(figsize=(10, 5.0), facecolor='#1e293b')
+    _apply_chart_style(ax, f'{rev} Trend by {label}', f'{label}ly {rev.lower()} momentum (Latest periods)')
+    ax.plot(x, y, color='#667eea', linewidth=3.5, marker='o', markersize=8, markerfacecolor='#00d9ff', markeredgewidth=2)
+    ax.fill_between(x, y, color='#667eea', alpha=0.15)
+    ax.scatter([x[-1]], [y[-1]], s=180, color='#00d9ff', edgecolor='#1e293b', linewidth=2.5, zorder=4)
     ax.annotate(_format_currency_text(y[-1]), xy=(x[-1], y[-1]), xytext=(10, 10), textcoords='offset points', fontsize=10, color='#f8fafc', fontweight='bold')
     ax.set_ylabel(rev, color='#94a3b8')
     ax.yaxis.set_major_formatter(FuncFormatter(_currency_formatter))
     ax.set_xticks(x)
-    ax.set_xticklabels(grouped['period'], rotation=35, ha='right')
-    ax.margins(x=0.04)
+    ax.set_xticklabels(grouped['period'], rotation=15, ha='right')
+    ax.margins(x=0.05)
     fig.tight_layout()
     return fig
 
 def build_revenue_by_region_chart(org_id):
     df = _load_sales_frame(org_id)
-    if len(df) == 0 or 'region' not in df.columns:
+    if len(df) == 0 or 'region' not in df.columns or 'revenue' not in df.columns:
         return _empty_chart_figure('No regional revenue data available yet.')
 
     headers = _get_headers_or_default(org_id)
     rev = headers['revenue']
     reg = headers['region']
 
-    grouped = df.groupby('region')['revenue'].sum().sort_values(ascending=False).reset_index()
-    colors = ['#667eea', '#00d9ff', '#764ba2', '#4ecdc4', '#f093fb', '#ff6b6b']
+    grouped = _clean_group_categories(df, 'region', 'revenue', max_categories=5)
+    if len(grouped) == 0:
+        return _empty_chart_figure('No regional revenue data available yet.')
 
-    fig, ax = plt.subplots(figsize=(10, 5.2), facecolor='#1e293b')
-    _apply_chart_style(ax, f'{rev} by {reg}', f'Ranked by total {rev.lower()} contribution')
-    bars = ax.barh(grouped['region'], grouped['revenue'], color=colors[:len(grouped)], edgecolor='none', height=0.62)
+    colors = ['#667eea', '#00d9ff', '#764ba2', '#4ecdc4', '#f093fb']
+
+    fig, ax = plt.subplots(figsize=(10, 5.0), facecolor='#1e293b')
+    _apply_chart_style(ax, f'{rev} by {reg}', f'Top 5 categories by total {rev.lower()}')
+    bars = ax.barh(grouped['region'].astype(str), grouped['revenue'], color=colors[:len(grouped)], edgecolor='none', height=0.5)
     ax.invert_yaxis()
     ax.set_xlabel(rev, color='#94a3b8')
     ax.xaxis.set_major_formatter(FuncFormatter(_currency_formatter))
+    max_val = max(grouped['revenue']) if len(grouped['revenue']) > 0 else 1
     for bar, value in zip(bars, grouped['revenue'].tolist()):
-        ax.text(bar.get_width() + max(grouped['revenue']) * 0.015, bar.get_y() + bar.get_height() / 2, _format_currency_text(value), va='center', ha='left', fontsize=9, color='#e2e8f0', fontweight='bold')
-    ax.margins(x=0.02)
+        ax.text(bar.get_width() + max_val * 0.02, bar.get_y() + bar.get_height() / 2, _format_currency_text(value), va='center', ha='left', fontsize=10, color='#e2e8f0', fontweight='bold')
+    ax.margins(x=0.1)
     fig.tight_layout()
     return fig
 
@@ -154,26 +211,36 @@ def build_segment_distribution_chart(org_id):
     headers = _get_headers_or_default(org_id)
     cust = headers['customer_id']
 
-    grouped = df['segment'].value_counts()
-    colors = ['#00d9ff', '#667eea', '#f093fb', '#ff6b6b', '#4ecdc4']
+    valid_df = df.dropna(subset=['segment'])
+    if len(valid_df) == 0:
+        return _empty_chart_figure('No customer segment data available yet.')
+
+    grouped = valid_df['segment'].value_counts()
+    if len(grouped) > 4:
+        top_g = grouped.iloc[:4]
+        other_sum = grouped.iloc[4:].sum()
+        top_g['Other'] = other_sum
+        grouped = top_g
+
+    colors = ['#00d9ff', '#667eea', '#f093fb', '#4ecdc4', '#fce38a']
     total = grouped.sum() or 1
 
-    fig, ax = plt.subplots(figsize=(10, 5.2), facecolor='#1e293b')
+    fig, ax = plt.subplots(figsize=(10, 5.0), facecolor='#1e293b')
     ax.set_facecolor('#1e293b')
     wedges, texts, autotexts = ax.pie(
         grouped.values,
         labels=grouped.index,
-        autopct=lambda pct: f'{pct:.0f}%' if pct >= 4 else '',
+        autopct=lambda pct: f'{pct:.0f}%' if pct >= 5 else '',
         startangle=90,
         colors=colors[:len(grouped)],
-        wedgeprops={'width': 0.38, 'edgecolor': '#1e293b', 'linewidth': 2},
-        pctdistance=0.8,
-        textprops={'color': '#f8fafc', 'fontsize': 10, 'fontweight': 'bold'}
+        wedgeprops={'width': 0.4, 'edgecolor': '#1e293b', 'linewidth': 2.5},
+        pctdistance=0.75,
+        textprops={'color': '#f8fafc', 'fontsize': 11, 'fontweight': 'bold'}
     )
     for text in texts:
         text.set_color('#94a3b8')
-        text.set_fontsize(10)
-    ax.text(0, 0.08, f'{int(total)}', ha='center', va='center', fontsize=24, fontweight='bold', color='#f8fafc')
+        text.set_fontsize(11)
+    ax.text(0, 0.08, f'{int(total)}', ha='center', va='center', fontsize=26, fontweight='bold', color='#f8fafc')
     ax.text(0, -0.12, f'{cust}s', ha='center', va='center', fontsize=10, color='#94a3b8')
     ax.legend(wedges, grouped.index, title=f'{cust} Segments', loc='center left', bbox_to_anchor=(1.02, 0.5), frameon=False)
     
@@ -196,21 +263,28 @@ def build_forecast_chart(org_id):
     rev = headers['revenue']
     reg = headers['region']
 
-    grouped = df[['region', 'predicted_revenue', 'lower_bound', 'upper_bound']].copy().fillna(0)
+    grouped = df[['region', 'predicted_revenue', 'lower_bound', 'upper_bound']].copy().dropna(subset=['predicted_revenue'])
+    if len(grouped) == 0:
+        return _empty_chart_figure('No forecast data available yet.')
+
+    if len(grouped) > 5:
+        grouped = grouped.head(5)
+
     x = list(range(len(grouped)))
     predicted = grouped['predicted_revenue'].tolist()
     lower = grouped['lower_bound'].tolist()
     upper = grouped['upper_bound'].tolist()
 
-    fig, ax = plt.subplots(figsize=(10, 5.2), facecolor='#1e293b')
-    _apply_chart_style(ax, f'{rev} Forecasts', f'Predicted {rev.lower()} with confidence range by {reg.lower()}')
-    ax.vlines(x, lower, upper, color='#9db4ff', linewidth=8, alpha=0.35, zorder=1)
-    ax.scatter(x, predicted, s=120, color='#00d9ff', edgecolor='#1e293b', linewidth=2, zorder=3, label='Predicted')
-    ax.plot(x, predicted, color='#667eea', linewidth=2, zorder=2)
+    fig, ax = plt.subplots(figsize=(10, 5.0), facecolor='#1e293b')
+    _apply_chart_style(ax, f'{rev} Forecasts', f'Top 5 predicted {rev.lower()} trajectories')
+    ax.vlines(x, lower, upper, color='#9db4ff', linewidth=10, alpha=0.35, zorder=1)
+    ax.scatter(x, predicted, s=140, color='#00d9ff', edgecolor='#1e293b', linewidth=2.5, zorder=3, label='Predicted')
+    ax.plot(x, predicted, color='#667eea', linewidth=2.5, zorder=2)
+    max_upper = max(upper) if len(upper) > 0 else 1
     for index, value in enumerate(predicted):
-        ax.text(index, value + max(upper) * 0.02, _format_currency_text(value), ha='center', va='bottom', fontsize=9, color='#f8fafc', fontweight='bold')
+        ax.text(index, value + max_upper * 0.02, _format_currency_text(value), ha='center', va='bottom', fontsize=9.5, color='#f8fafc', fontweight='bold')
     ax.set_xticks(x)
-    ax.set_xticklabels(grouped['region'], rotation=25, ha='right')
+    ax.set_xticklabels(grouped['region'].astype(str), rotation=15, ha='right')
     ax.set_ylabel(rev, color='#94a3b8')
     ax.yaxis.set_major_formatter(FuncFormatter(_currency_formatter))
     ax.legend(frameon=False, loc='upper left')
@@ -220,31 +294,35 @@ def build_forecast_chart(org_id):
         for text in legend.get_texts():
             text.set_color('#94a3b8')
 
-    ax.margins(x=0.06)
+    ax.margins(x=0.08)
     fig.tight_layout()
     return fig
 
 def build_revenue_by_product_chart(org_id):
     df = _load_sales_frame(org_id)
-    if len(df) == 0 or 'product' not in df.columns:
+    if len(df) == 0 or 'product' not in df.columns or 'revenue' not in df.columns:
         return _empty_chart_figure('No product revenue data available yet.')
 
     headers = _get_headers_or_default(org_id)
     rev = headers['revenue']
     prod = headers['product']
 
-    grouped = df.groupby('product')['revenue'].sum().sort_values(ascending=False).reset_index()
-    colors = ['#764ba2', '#667eea', '#00d9ff', '#4ecdc4', '#f093fb', '#ff6b6b']
+    grouped = _clean_group_categories(df, 'product', 'revenue', max_categories=5)
+    if len(grouped) == 0:
+        return _empty_chart_figure('No product revenue data available yet.')
 
-    fig, ax = plt.subplots(figsize=(10, 5.2), facecolor='#1e293b')
-    _apply_chart_style(ax, f'{rev} by {prod}', f'Ranked by total {rev.lower()} contribution')
-    bars = ax.barh(grouped['product'], grouped['revenue'], color=colors[:len(grouped)], edgecolor='none', height=0.62)
+    colors = ['#764ba2', '#667eea', '#00d9ff', '#4ecdc4', '#f093fb']
+
+    fig, ax = plt.subplots(figsize=(10, 5.0), facecolor='#1e293b')
+    _apply_chart_style(ax, f'{rev} by {prod}', f'Top 5 categories by total {rev.lower()}')
+    bars = ax.barh(grouped['product'].astype(str), grouped['revenue'], color=colors[:len(grouped)], edgecolor='none', height=0.5)
     ax.invert_yaxis()
     ax.set_xlabel(rev, color='#94a3b8')
     ax.xaxis.set_major_formatter(FuncFormatter(_currency_formatter))
+    max_val = max(grouped['revenue']) if len(grouped['revenue']) > 0 else 1
     for bar, value in zip(bars, grouped['revenue'].tolist()):
-        ax.text(bar.get_width() + max(grouped['revenue']) * 0.015, bar.get_y() + bar.get_height() / 2, _format_currency_text(value), va='center', ha='left', fontsize=9, color='#e2e8f0', fontweight='bold')
-    ax.margins(x=0.02)
+        ax.text(bar.get_width() + max_val * 0.02, bar.get_y() + bar.get_height() / 2, _format_currency_text(value), va='center', ha='left', fontsize=10, color='#e2e8f0', fontweight='bold')
+    ax.margins(x=0.1)
     fig.tight_layout()
     return fig
 
@@ -257,16 +335,23 @@ def build_units_by_region_chart(org_id):
     units = headers['units_sold']
     reg = headers['region']
 
-    grouped = df.groupby('region')['units_sold'].sum().sort_values(ascending=False).reset_index()
-    colors = ['#4ecdc4', '#ff6b6b', '#667eea', '#00d9ff', '#764ba2', '#f093fb']
+    grouped = _clean_group_categories(df, 'region', 'units_sold', max_categories=5)
+    if len(grouped) == 0:
+        return _empty_chart_figure('No regional units data available yet.')
 
-    fig, ax = plt.subplots(figsize=(10, 5.2), facecolor='#1e293b')
-    _apply_chart_style(ax, f'{units} by {reg}', f'Ranked by total {units.lower()} sold')
-    bars = ax.bar(grouped['region'], grouped['units_sold'], color=colors[:len(grouped)], edgecolor='none', width=0.52)
+    colors = ['#4ecdc4', '#ff6b6b', '#667eea', '#00d9ff', '#764ba2']
+
+    fig, ax = plt.subplots(figsize=(10, 5.0), facecolor='#1e293b')
+    _apply_chart_style(ax, f'{units} by {reg}', f'Top 5 categories by {units.lower()} sold')
+    x = list(range(len(grouped)))
+    bars = ax.bar(x, grouped['units_sold'], color=colors[:len(grouped)], edgecolor='none', width=0.45)
     ax.set_ylabel(units, color='#94a3b8')
+    max_val = max(grouped['units_sold']) if len(grouped['units_sold']) > 0 else 1
     for bar, value in zip(bars, grouped['units_sold'].tolist()):
-        ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + max(grouped['units_sold']) * 0.015, f"{int(value):,}", va='bottom', ha='center', fontsize=9, color='#e2e8f0', fontweight='bold')
-    ax.margins(y=0.08)
+        ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + max_val * 0.02, f"{int(value):,}", va='bottom', ha='center', fontsize=9.5, color='#e2e8f0', fontweight='bold')
+    ax.set_xticks(x)
+    ax.set_xticklabels(grouped['region'].astype(str), rotation=15, ha='right')
+    ax.margins(y=0.1)
     fig.tight_layout()
     return fig
 
