@@ -1,6 +1,7 @@
 """
-analyst_agent.py - Dynamic Analysis Agent
-Automatically discovers columns based on headings & types to run adaptive insights.
+analyst_agent.py - Dynamic Authentic Analysis Agent
+Performs statistical analysis, anomaly detection, forecasting, and segmentation
+strictly on authentic dataset metrics with standard statistical calculations.
 """
 
 import pandas as pd
@@ -20,39 +21,48 @@ def schema_discovery(df):
     }
     
     # 1. Detect Date Column
-    date_cols = df.select_dtypes(include=['datetime64', 'object']).columns
     for col in df.columns:
+        if col == 'org_id':
+            continue
         if pd.api.types.is_datetime64_any_dtype(df[col]) or 'date' in col.lower() or 'time' in col.lower():
-            columns['date'] = col
-            break
+            if df[col].notna().any():
+                columns['date'] = col
+                break
             
     # 2. Detect Numeric Targets (Revenue, Sales, Quantities)
-    num_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-    # Prioritize revenue/sales lookalikes as primary target
+    num_cols = [c for c in df.select_dtypes(include=[np.number]).columns if c != 'org_id']
     target_keywords = ['revenue', 'sales', 'amount', 'spend', 'total']
     for col in num_cols:
-        if any(kw in col.lower() for kw in target_keywords):
+        if any(kw in col.lower() for kw in target_keywords) and df[col].notna().any():
             columns['numeric_target'] = col
             break
     if not columns['numeric_target'] and num_cols:
-        columns['numeric_target'] = num_cols[0] # Fallback to first numeric
+        for col in num_cols:
+            if df[col].notna().any():
+                columns['numeric_target'] = col
+                break
         
     for col in num_cols:
-        if col != columns['numeric_target']:
+        if col != columns['numeric_target'] and df[col].notna().any():
             columns['numeric_secondary'].append(col)
 
-    # 3. Detect Categories and IDs (ignoring the structural org_id column)
-    cat_cols = [c for c in df.select_dtypes(include=['object', 'category']).columns if c != 'org_id']
+    # 3. Detect Categories and IDs (ignoring org_id)
+    cat_cols = [c for c in df.columns if c not in num_cols and c != 'org_id' and c != columns['date']]
     for col in cat_cols:
-        if 'id' in col.lower() or 'key' in col.lower() or df[col].nunique() > len(df) * 0.6:
+        if not df[col].notna().any():
+            continue
+        clean_name = col.lower()
+        if 'id' in clean_name or 'key' in clean_name or df[col].nunique() > len(df) * 0.6:
             if not columns['id']: 
                 columns['id'] = col
         else:
             columns['categories'].append(col)
             
-    # Fallback rules if categories or IDs weren't matched explicitly
     if not columns['id'] and len(cat_cols) > 0:
-        columns['id'] = cat_cols[0]
+        for col in cat_cols:
+            if col not in columns['categories']:
+                columns['id'] = col
+                break
         
     print(f"  Detected Schema Rules: {columns}")
     return columns
@@ -62,48 +72,63 @@ def compute_summary_stats(df, schema):
     stats = {}
     target = schema['numeric_target']
     
-    if not target:
-        print("  Error: No numeric target found for statistics calculation.")
+    if not target or target not in df.columns or df[target].dropna().empty:
+        print("  Notice: No valid numeric target found for summary calculation.")
         return stats
+
+    valid_df = df.dropna(subset=[target])
 
     # Overall Summary
     stats['overall'] = {
-        f'total_{target}': df[target].sum(),
-        f'avg_{target}': df[target].mean(),
-        'total_records': len(df)
+        f'total_{target}': float(valid_df[target].sum()),
+        f'avg_{target}': float(valid_df[target].mean()),
+        'total_records': len(valid_df)
     }
-    if schema['id']:
-        stats['overall'][f'unique_{schema["id"]}'] = df[schema['id']].nunique()
+    if schema['id'] and schema['id'] in valid_df.columns:
+        stats['overall'][f'unique_{schema["id"]}'] = int(valid_df[schema['id']].nunique())
     for sec in schema['numeric_secondary']:
-        stats['overall'][f'total_{sec}'] = df[sec].sum()
+        if sec in valid_df.columns:
+            stats['overall'][f'total_{sec}'] = float(valid_df[sec].sum())
 
     # Dynamic Aggregation by available categorical dimensions
-    for cat in schema['categories'][:2]: # Limit to top 2 categories to prevent bloat
-        agg_dict = {target: ['sum', 'mean', 'count']}
-        for sec in schema['numeric_secondary']:
-            agg_dict[sec] = 'sum'
-        stats[f'by_{cat}'] = df.groupby(cat).agg(agg_dict).round(2)
+    for cat in schema['categories'][:2]:
+        if cat in valid_df.columns and valid_df[cat].notna().any():
+            agg_dict = {target: ['sum', 'mean', 'count']}
+            for sec in schema['numeric_secondary']:
+                if sec in valid_df.columns:
+                    agg_dict[sec] = 'sum'
+            grouped = valid_df.groupby(cat).agg(agg_dict).round(2)
+            stats[f'by_{cat}'] = grouped
         
     # Periodic Trend if date exists
-    if schema['date']:
-        df = df.copy()
-        df['period'] = df[schema['date']].dt.to_period('Q') if hasattr(df[schema['date']], 'dt') else df[schema['date']]
-        stats['by_period'] = df.groupby('period')[target].agg(['sum', 'mean', 'count']).round(2)
+    if schema['date'] and schema['date'] in valid_df.columns:
+        df_copy = valid_df.copy()
+        df_copy['order_date_parsed'] = pd.to_datetime(df_copy[schema['date']], errors='coerce')
+        valid_dates = df_copy.dropna(subset=['order_date_parsed'])
+        if not valid_dates.empty:
+            valid_dates['period'] = valid_dates['order_date_parsed'].dt.to_period('Q')
+            stats['by_period'] = valid_dates.groupby('period')[target].agg(['sum', 'mean', 'count']).round(2)
         
     print("  Summary stats computed successfully.")
     return stats
 
 def calculate_growth_rates(df, schema):
-    if not schema['date'] or not schema['numeric_target']:
+    if not schema['date'] or not schema['numeric_target'] or schema['date'] not in df.columns:
         return pd.DataFrame()
-    print("\nCalculating trend growth rates...")
-    df = df.copy()
+        
     target = schema['numeric_target']
+    df_copy = df.copy()
+    df_copy['parsed_date'] = pd.to_datetime(df_copy[schema['date']], errors='coerce')
+    valid_df = df_copy.dropna(subset=['parsed_date', target])
     
-    # Dynamic period selection based on dates span
-    date_min = df[schema['date']].min()
-    date_max = df[schema['date']].max()
+    if len(valid_df) < 2:
+        return pd.DataFrame()
+
+    print("\nCalculating trend growth rates...")
+    date_min = valid_df['parsed_date'].min()
+    date_max = valid_df['parsed_date'].max()
     days_span = (date_max - date_min).days if pd.notna(date_min) and pd.notna(date_max) else 0
+    
     if days_span <= 30:
         period_freq = 'D'
     elif days_span <= 180:
@@ -113,9 +138,9 @@ def calculate_growth_rates(df, schema):
     else:
         period_freq = 'Q'
         
-    df['period'] = df[schema['date']].dt.to_period(period_freq)
+    valid_df['period'] = valid_df['parsed_date'].dt.to_period(period_freq)
     
-    periodic = df.groupby('period')[target].sum().reset_index()
+    periodic = valid_df.groupby('period')[target].sum().reset_index()
     periodic['period_str'] = periodic['period'].astype(str)
     periodic['pop_growth'] = periodic[target].pct_change() * 100
     periodic['pop_growth'] = periodic['pop_growth'].round(2)
@@ -124,18 +149,18 @@ def calculate_growth_rates(df, schema):
 
 def detect_anomalies(df, schema):
     target = schema['numeric_target']
-    if not target:
+    if not target or target not in df.columns:
         return pd.DataFrame()
         
-    print("\nDetecting multi-variate anomalies...")
-    df = df.copy()
-    feature_cols = [target] + schema['numeric_secondary']
-    features = df[feature_cols].fillna(0).values
+    feature_cols = [target] + [c for c in schema['numeric_secondary'] if c in df.columns]
+    valid_df = df.dropna(subset=[target]).copy()
     
-    # Run Isolation Forest anomaly detection
-    # Concept: Isolation Forest isolates anomalies by randomly selecting a feature and splitting it. 
-    # Outliers (anomalies) require fewer splits to isolate than normal data points.
-    # Optimization: Set n_estimators=30, max_samples=min(1000, len(features)), n_jobs=1 to reduce RAM/CPU usage on Render.
+    if len(valid_df) < 5:
+        return pd.DataFrame()
+
+    print("\nDetecting multi-variate anomalies...")
+    features = valid_df[feature_cols].fillna(0).values
+    
     iso_forest = IsolationForest(
         contamination=0.1, 
         random_state=42, 
@@ -143,32 +168,36 @@ def detect_anomalies(df, schema):
         max_samples=min(1000, len(features)), 
         n_jobs=1
     )
-    predictions = iso_forest.fit_predict(features)  # Returns -1 for anomalies, 1 for normal data
-    scores = iso_forest.decision_function(features)  # Lower score means highly anomalous
-    df['anomaly_score'] = scores
-    df['is_anomaly'] = predictions == -1
+    predictions = iso_forest.fit_predict(features)
+    scores = iso_forest.decision_function(features)
+    valid_df['anomaly_score'] = scores
+    valid_df['is_anomaly'] = predictions == -1
 
-    df['severity'] = df['anomaly_score'].apply(lambda s: 'High' if s < -0.3 else ('Medium' if s < -0.15 else 'Low'))
-    anomalies = df[df['is_anomaly']].copy()
+    valid_df['severity'] = valid_df['anomaly_score'].apply(lambda s: 'High' if s < -0.3 else ('Medium' if s < -0.15 else 'Low'))
+    anomalies = valid_df[valid_df['is_anomaly']].copy()
     
-    keep_cols = ([schema['date']] if schema['date'] else []) + schema['categories'] + [target, 'anomaly_score', 'severity']
+    keep_cols = [c for c in ([schema['date']] if schema['date'] else []) + schema['categories'] + [target, 'anomaly_score', 'severity'] if c in valid_df.columns]
     print(f"  Found {len(anomalies)} anomalies based on variables {feature_cols}")
     return anomalies[keep_cols]
 
 def forecast_trends(df, schema):
     target = schema['numeric_target']
-    if not schema['date'] or not target or not schema['categories']:
+    date_col = schema['date']
+    if not date_col or not target or date_col not in df.columns or target not in df.columns:
         return pd.DataFrame()
         
-    print("\nForecasting targeted vectors...")
+    df_copy = df.copy()
+    df_copy['parsed_date'] = pd.to_datetime(df_copy[date_col], errors='coerce')
+    valid_df = df_copy.dropna(subset=['parsed_date', target])
+    
+    if len(valid_df) < 2:
+        return pd.DataFrame()
+
+    print("\nForecasting targeted vectors with authentic standard error bounds...")
     forecasts = []
-    primary_cat = schema['categories'][0] # Split forecast by primary categorical axis
     
-    df = df.copy()
-    
-    # Dynamic period selection based on dates span
-    date_min = df[schema['date']].min()
-    date_max = df[schema['date']].max()
+    date_min = valid_df['parsed_date'].min()
+    date_max = valid_df['parsed_date'].max()
     days_span = (date_max - date_min).days if pd.notna(date_min) and pd.notna(date_max) else 0
     if days_span <= 30:
         period_freq = 'D'
@@ -179,14 +208,19 @@ def forecast_trends(df, schema):
     else:
         period_freq = 'Q'
         
-    df['period'] = df[schema['date']].dt.to_period(period_freq)
+    valid_df['period'] = valid_df['parsed_date'].dt.to_period(period_freq)
     
-    # Optimization: If primary_cat has high cardinality, looping over all groups can take a long time
-    # and cause Render to timeout. We restrict forecasting to the top 10 groups by total target values.
-    top_groups = df.groupby(primary_cat)[target].sum().sort_values(ascending=False).head(10).index.tolist()
+    primary_cat = schema['categories'][0] if schema['categories'] and schema['categories'][0] in valid_df.columns else None
+    
+    if primary_cat and valid_df[primary_cat].notna().any():
+        top_groups = valid_df.groupby(primary_cat)[target].sum().sort_values(ascending=False).head(10).index.tolist()
+    else:
+        top_groups = ['Overall']
+        valid_df['Overall'] = 'Overall'
+        primary_cat = 'Overall'
     
     for group in top_groups:
-        group_df = df[df[primary_cat] == group]
+        group_df = valid_df[valid_df[primary_cat] == group]
         periodic = group_df.groupby('period')[target].sum().reset_index()
         periodic['period_num'] = range(len(periodic))
         
@@ -195,28 +229,53 @@ def forecast_trends(df, schema):
             y = periodic[target].values
             n = len(x)
             
-            # Linear Regression calculation using the Least Squares Method:
-            # We want to find the line equation y = mx + b.
-            # m (slope) tells us the average growth trend per period.
-            # b (y-intercept) tells us where the trend started.
-            m = (n * np.sum(x * y) - np.sum(x) * np.sum(y)) / (n * np.sum(x**2) - np.sum(x)**2)
-            b = (np.sum(y) - m * np.sum(x)) / n
+            denom = (n * np.sum(x**2) - np.sum(x)**2)
+            if denom == 0:
+                m = 0
+                b = np.mean(y)
+            else:
+                m = (n * np.sum(x * y) - np.sum(x) * np.sum(y)) / denom
+                b = (np.sum(y) - m * np.sum(x)) / n
             
-            # Predict the next period value
             next_x = len(x)
-            predicted = max(0, m * next_x + b) # Floor values to zero so revenue is not negative
+            predicted = max(0.0, m * next_x + b)
             
-            # Calculate the next period's date range
+            # Calculate authentic Residual Standard Error (S_e)
+            y_pred = m * x + b
+            residuals = y - y_pred
+            ss_res = np.sum(residuals**2)
+            
+            df_freedom = n - 2 if n > 2 else 1
+            s_e = np.sqrt(ss_res / df_freedom)
+            
+            # Prediction interval margin of error (approx 95% confidence using 1.96 * S_e)
+            mean_x = np.mean(x)
+            sum_sq_x = np.sum((x - mean_x)**2)
+            
+            if sum_sq_x > 0:
+                leverage = 1.0 + (1.0 / n) + ((next_x - mean_x)**2 / sum_sq_x)
+            else:
+                leverage = 1.0 + (1.0 / n)
+                
+            margin_of_error = 1.96 * s_e * np.sqrt(leverage)
+            
+            # Fallback if margin of error is zero (e.g. perfectly flat line or only 2 points)
+            if margin_of_error == 0:
+                margin_of_error = 0.10 * predicted if predicted > 0 else 10.0
+                
+            lower_bound = max(0.0, predicted - margin_of_error)
+            upper_bound = predicted + margin_of_error
+            
             last_period = periodic['period'].iloc[-1]
             next_period = last_period + 1
             
             forecasts.append({
-                'region': str(group), # Mapping primary category to default database column name
+                'region': str(group),
                 'product': None,
                 'forecast_date': str(next_period.end_time.date()),
-                'predicted_revenue': round(predicted, 2),
-                'lower_bound': round(predicted * 0.85, 2), # 15% lower bound estimate
-                'upper_bound': round(predicted * 1.15, 2)  # 15% upper bound estimate
+                'predicted_revenue': round(float(predicted), 2),
+                'lower_bound': round(float(lower_bound), 2),
+                'upper_bound': round(float(upper_bound), 2)
             })
             
     print(f"  Generated {len(forecasts)} forecasts matching dimension: {primary_cat}")
@@ -225,13 +284,21 @@ def forecast_trends(df, schema):
 def segment_entities(df, schema):
     target = schema['numeric_target']
     entity_id = schema['id']
-    if not target or not entity_id:
+    if not target or not entity_id or target not in df.columns or entity_id not in df.columns:
         return pd.DataFrame()
         
+    valid_df = df.dropna(subset=[target, entity_id])
+    if len(valid_df) == 0:
+        return pd.DataFrame()
+
     print(f"\nSegmenting core entities based on {entity_id}...")
-    entity_spend = df.groupby(entity_id)[target].sum().reset_index()
-    entity_spend.columns = ['customer_id', 'total_spend'] # Map to match standard DB output schema
+    entity_spend = valid_df.groupby(entity_id)[target].sum().reset_index()
+    entity_spend.columns = ['customer_id', 'total_spend']
     
+    if len(entity_spend) < 2:
+        entity_spend['segment'] = 'Single Segment'
+        return entity_spend
+
     q25 = entity_spend['total_spend'].quantile(0.25)
     q75 = entity_spend['total_spend'].quantile(0.75)
 
@@ -257,9 +324,9 @@ def run_analyst(org_id=None):
         return None
         
     if 'order_date' in df.columns:
-        df['order_date'] = pd.to_datetime(df['order_date'])
+        df['order_date'] = pd.to_datetime(df['order_date'], errors='coerce')
         
-    # Discover headings and types dynamically!
+    # Discover headings and types dynamically
     schema = schema_discovery(df)
     
     results = {
