@@ -72,16 +72,19 @@ def compute_summary_stats(df, schema):
     stats = {}
     target = schema['numeric_target']
     
-    if not target or target not in df.columns or df[target].dropna().empty:
+    if not target or target not in df.columns or df[target].empty:
         print("  Notice: No valid numeric target found for summary calculation.")
         return stats
 
-    valid_df = df.dropna(subset=[target])
+    # Nulls are stored as 0 — use all rows for the sum (0-filled rows contribute 0)
+    valid_df = df.copy()
+    # For average: only count rows with a real value (> 0) so zeros don't skew the avg
+    nonzero_df = valid_df[valid_df[target] > 0]
 
     # Overall Summary
     stats['overall'] = {
         f'total_{target}': float(valid_df[target].sum()),
-        f'avg_{target}': float(valid_df[target].mean()),
+        f'avg_{target}': float(nonzero_df[target].mean()) if not nonzero_df.empty else 0.0,
         'total_records': len(valid_df)
     }
     if schema['id'] and schema['id'] in valid_df.columns:
