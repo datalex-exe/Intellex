@@ -46,12 +46,27 @@ def get_kpi_data(org_id):
     if len(df) == 0:
         return {'total_revenue': 0, 'total_orders': 0, 'total_units': 0,
                 'active_customers': 0, 'avg_order_value': 0}
+
+    # Ensure numeric types
+    df['revenue'] = pd.to_numeric(df['revenue'], errors='coerce').fillna(0)
+    df['units_sold'] = pd.to_numeric(df['units_sold'], errors='coerce').fillna(0)
+
+    total_revenue = float(df['revenue'].sum())
+    total_orders = len(df)
+    total_units = int(df['units_sold'].sum())
+    active_customers = int(df['customer_id'].nunique()) if 'customer_id' in df.columns else 0
+
+    # Average only over rows with a real (non-zero) revenue value
+    # so that null-filled zero rows don't drag the average down
+    nonzero_rev = df[df['revenue'] > 0]['revenue']
+    avg_order_value = float(nonzero_rev.mean()) if len(nonzero_rev) > 0 else 0.0
+
     return {
-        'total_revenue': float(df['revenue'].sum()),
-        'total_orders': len(df),
-        'total_units': int(df['units_sold'].sum()),
-        'active_customers': int(df['customer_id'].nunique()),
-        'avg_order_value': float(df['revenue'].mean())
+        'total_revenue': total_revenue,
+        'total_orders': total_orders,
+        'total_units': total_units,
+        'active_customers': active_customers,
+        'avg_order_value': avg_order_value
     }
 
 def create_sample_data(filepath):
