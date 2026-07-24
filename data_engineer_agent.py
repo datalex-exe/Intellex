@@ -102,25 +102,27 @@ def clean_data(df):
         df['order_date'] = pd.date_range(end=pd.Timestamp.now().normalize(), periods=len(df), freq='D').strftime('%Y-%m-%d')
 
     # 2. CLEAN REVENUE
+    # Null values are filled with 0 so they contribute 0 to totals, not a
+    # phantom median. This gives the correct sum without inflating figures.
     if 'revenue' in df.columns:
-        df['revenue'] = pd.to_numeric(df['revenue'], errors='coerce')
-        df['revenue'] = df['revenue'].fillna(df['revenue'].median() if not df['revenue'].isna().all() else 0.0)
+        df['revenue'] = pd.to_numeric(df['revenue'], errors='coerce').fillna(0.0)
     else:
         num_cols = df.select_dtypes(include=['number']).columns
         if len(num_cols) > 0:
-            df['revenue'] = df[num_cols[0]].fillna(0.0)
+            df['revenue'] = pd.to_numeric(df[num_cols[0]], errors='coerce').fillna(0.0)
         else:
             df['revenue'] = 0.0
 
     # 3. CLEAN UNITS_SOLD (populated from existing dataset columns)
+    # Null values are filled with 0 so they contribute 0 to totals.
     if 'units_sold' in df.columns:
         df['units_sold'] = pd.to_numeric(df['units_sold'], errors='coerce').fillna(0).astype(int)
     else:
         num_cols = [c for c in df.select_dtypes(include=['number']).columns if c != 'revenue']
         if num_cols:
-            df['units_sold'] = df[num_cols[0]].fillna(1).astype(int).abs()
+            df['units_sold'] = pd.to_numeric(df[num_cols[0]], errors='coerce').fillna(0).astype(int)
         else:
-            df['units_sold'] = 1
+            df['units_sold'] = 0
 
     # 4. CLEAN REGION (populated from existing dataset columns)
     if 'region' in df.columns and not df['region'].isna().all():
