@@ -166,6 +166,7 @@ def api_revenue_by_region():
     org_id = session['org_id']
     df = get_table_as_df('sales_clean', org_id)
     if len(df) == 0: return jsonify({'status': 'success', 'data': []})
+    df['revenue'] = pd.to_numeric(df['revenue'], errors='coerce').fillna(0)
     grouped = df.groupby('region')['revenue'].sum().reset_index()
     return jsonify({'status': 'success', 'data': safe_json(grouped)})
 
@@ -175,6 +176,7 @@ def api_revenue_by_product():
     org_id = session['org_id']
     df = get_table_as_df('sales_clean', org_id)
     if len(df) == 0 or 'product' not in df.columns: return jsonify({'status': 'success', 'data': []})
+    df['revenue'] = pd.to_numeric(df['revenue'], errors='coerce').fillna(0)
     grouped = df.groupby('product')['revenue'].sum().reset_index()
     return jsonify({'status': 'success', 'data': safe_json(grouped)})
 
@@ -193,7 +195,10 @@ def api_revenue_trend():
     org_id = session['org_id']
     df = get_table_as_df('sales_clean', org_id)
     if len(df) == 0: return jsonify({'status': 'success', 'data': []})
-    df['order_date'] = pd.to_datetime(df['order_date'])
+    df['revenue'] = pd.to_numeric(df['revenue'], errors='coerce').fillna(0)
+    df['order_date'] = pd.to_datetime(df['order_date'], errors='coerce')
+    df = df.dropna(subset=['order_date'])
+    if df.empty: return jsonify({'status': 'success', 'data': []})
     freq, label = _get_period_freq(df)
     df['period'] = df['order_date'].dt.to_period(freq).astype(str)
     grouped = df.groupby('period')['revenue'].sum().reset_index()
