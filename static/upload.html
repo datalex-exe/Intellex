@@ -1208,11 +1208,16 @@
             const byQuarter = {};
             const segments = { 'Low Value': 0, 'Mid Value': 0, 'High Value': 0 };
             const sales = [];
-            let revenueCount = 0;
+            let revenueCount = 0; // rows where revenue > 0, for avg calculation
 
             records.forEach(r => {
-                const rev = parseFloat((r.revenue || '').toString().replace(/[^0-9.-]/g, '')) || 0;
-                const units = parseInt(r.units_sold || '0') || 0;
+                // Null / empty → 0  (do NOT use median or skip)
+                const rawRev = (r.revenue !== undefined && r.revenue !== null) ? r.revenue.toString().trim() : '';
+                const rev = rawRev !== '' ? (parseFloat(rawRev.replace(/[^0-9.-]/g, '')) || 0) : 0;
+
+                const rawUnits = (r.units_sold !== undefined && r.units_sold !== null) ? r.units_sold.toString().trim() : '';
+                const units = rawUnits !== '' ? (parseInt(rawUnits) || 0) : 0;
+
                 const dateValue = new Date(r.order_date || '');
                 const region = r.region || 'Unknown';
                 const product = r.product || 'Unknown';
@@ -1221,6 +1226,7 @@
                 kpis.total_revenue += rev;
                 kpis.total_units += units;
                 kpis.total_orders += 1;
+
                 if (region) {
                     byRegion[region] = (byRegion[region] || 0) + rev;
                 }
@@ -1231,6 +1237,8 @@
                 if (rev < 10000) segments['Low Value'] += 1;
                 else if (rev < 25000) segments['Mid Value'] += 1;
                 else segments['High Value'] += 1;
+
+                // Only count toward avg if revenue is an actual value (> 0)
                 if (rev > 0) revenueCount += 1;
 
                 sales.push({
@@ -1242,7 +1250,9 @@
                     customer_id: customer
                 });
             });
-            kpis.avg_order_value = revenueCount ? kpis.total_revenue / revenueCount : 0;
+
+            // Average over non-zero rows only so null→0 rows don't drag down the avg
+            kpis.avg_order_value = revenueCount > 0 ? kpis.total_revenue / revenueCount : 0;
 
             const trend = Object.keys(byQuarter).sort().map(quarter => ({ quarter, revenue: byQuarter[quarter] }));
             const region = Object.keys(byRegion).sort((a, b) => byRegion[b] - byRegion[a]).map(name => ({ region: name, revenue: byRegion[name] }));
